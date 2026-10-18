@@ -1,4 +1,8 @@
 ARG BASE_IMAGE=nvidia/cuda:12.6.3-base-ubuntu24.04
+# Maxwell (compute capability 5.2) support: the default PyPI torch wheels are built against CUDA 12.8, which dropped
+# sm_50/sm_52 kernels. The cu126 wheels still ship them (until PyTorch 2.15). Set to an empty string to keep the default wheels.
+# https://dev-discuss.pytorch.org/t/cuda-toolkit-version-and-architecture-support-update-maxwell-and-pascal-architecture-support-removed-in-cuda-12-8-and-12-9-builds/3128
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
 # hadolint ignore=DL3006
 FROM ${BASE_IMAGE}
 LABEL org.opencontainers.image.source="https://github.com/speaches-ai/speaches"
@@ -34,6 +38,19 @@ RUN --mount=type=cache,target=/home/ubuntu/.cache/uv,uid=1000,gid=1000 \
 COPY --chown=ubuntu . .
 RUN --mount=type=cache,target=/home/ubuntu/.cache/uv,uid=1000,gid=1000 \
     uv sync --frozen --compile-bytecode --no-dev
+# Swap torch/torchaudio for the CUDA 12.6 builds (which still contain sm_52 kernels). This must run after the final
+# `uv sync`, since `uv sync` would otherwise restore the locked cu128 wheels. The versions are read from the installed
+# packages so they stay in sync with uv.lock. The nvidia-*-cu12 libraries are replaced by the versions torch+cu126 pins.
+ARG TORCH_INDEX_URL
+RUN --mount=type=cache,target=/home/ubuntu/.cache/uv,uid=1000,gid=1000 \
+    if [ -n "${TORCH_INDEX_URL}" ]; then \
+        TORCH_VERSION="$(.venv/bin/python -c 'from importlib.metadata import version; print(version("torch").split("+")[0])')" && \
+        TORCHAUDIO_VERSION="$(.venv/bin/python -c 'from importlib.metadata import version; print(version("torchaudio").split("+")[0])')" && \
+        uv pip install --python .venv/bin/python --compile-bytecode \
+            --reinstall-package torch --reinstall-package torchaudio \
+            --index-url https://pypi.org/simple --extra-index-url "${TORCH_INDEX_URL}" \
+            "torch==${TORCH_VERSION}" "torchaudio==${TORCHAUDIO_VERSION}"; \
+    fi
 # Creating a directory for the cache to avoid the following error:
 # PermissionError: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub'
 # This error occurs because the volume is mounted as root and the `ubuntu` user doesn't have permission to write to it. Pre-creating the directory solves this issue.

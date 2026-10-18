@@ -1,12 +1,19 @@
+# This branch targets NVIDIA Maxwell GPUs (CUDA compute capability 5.2, e.g. GTX 900 series / Titan X / Quadro M-series).
+# It is self-contained: the GPU reservation and cache volume live here, so `docker compose up --build` is enough.
+# NOTE: compose.cuda.yaml, compose.cuda-cdi.yaml and compose.cpu.yaml extend this file and are not adjusted for this branch.
 services:
   speaches:
     container_name: speaches
+    image: speaches:cuda-12.6.3-maxwell
     build:
       dockerfile: Dockerfile
       context: .
       platforms:
         - linux/amd64
-        - linux/arm64
+      args:
+        BASE_IMAGE: nvidia/cuda:12.6.3-base-ubuntu24.04
+        # torch wheels built against CUDA 12.6 are the last ones that still contain sm_52 kernels
+        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu126
     restart: unless-stopped
     ports:
       - 8000:8000
@@ -20,9 +27,23 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      # Maxwell has no fp16 tensor cores and no int8 (DP4A) support in CTranslate2, so faster-whisper must run in float32
+      WHISPER__COMPUTE_TYPE: float32
+    volumes:
+      - hf-hub-cache:/home/ubuntu/.cache/huggingface/hub
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://0.0.0.0:8000/health"] # TODO: won't work if a user changes the port
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
+volumes:
+  hf-hub-cache:
