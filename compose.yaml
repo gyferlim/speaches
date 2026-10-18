@@ -30,6 +30,8 @@ services:
     environment:
       # Maxwell has no fp16 tensor cores and no int8 (DP4A) support in CTranslate2, so faster-whisper must run in float32
       WHISPER__COMPUTE_TYPE: float32
+      # onnxruntime-gpu 1.24.4 ships no sm_52 kernels (cudaErrorNoKernelImageForDevice), so ONNX models (kokoro, parakeet, piper, VAD) run on CPU
+      UNSTABLE_ORT_OPTS__EXCLUDE_PROVIDERS: '["TensorrtExecutionProvider", "CUDAExecutionProvider"]'
     volumes:
       - hf-hub-cache:/home/ubuntu/.cache/huggingface/hub
     deploy:
