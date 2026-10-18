@@ -37,7 +37,8 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              # nvidia-smi index 1 is a Quadro M2000 (compute 5.2); index 0 is a CMP 50HX (compute 7.5) and is intentionally not exposed
+              device_ids: ["1"]
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://0.0.0.0:8000/health"] # TODO: won't work if a user changes the port
